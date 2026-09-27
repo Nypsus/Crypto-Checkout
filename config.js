@@ -19,10 +19,12 @@ window.CHECKOUT_CONFIG = {
     explorer: 'https://bscscan.com'
   },
 
-  // RPC publics pour lire le contrat SANS wallet (essayés dans l'ordre)
+  // RPC publics pour lire le contrat SANS wallet.
+  // La page les essaie dans l'ordre et bascule automatiquement sur le
+  // suivant en cas de lenteur/erreur (timeout de 9 s par appel).
   readRpcs: [
-    'https://bsc-dataseed.binance.org/',
     'https://bsc-rpc.publicnode.com',
+    'https://bsc-dataseed.binance.org/',
     'https://rpc.ankr.com/bsc'
   ],
 

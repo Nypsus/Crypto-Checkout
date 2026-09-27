@@ -22,6 +22,7 @@
   .row input { flex:1; min-width:150px; padding:9px 10px; background:#0f131b; color:var(--txt); border:1px solid var(--line); border-radius:8px; font-size:14px; }
   button { padding:9px 14px; background:var(--acc); color:#151515; border:0; border-radius:8px; font-weight:600; cursor:pointer; font-size:13.5px; }
   button:disabled { opacity:.45; cursor:not-allowed; }
+  button.ghost { background:#0f131b; color:var(--txt); border:1px solid var(--line); margin-right:8px; font-weight:500; }
   .prod { padding:12px; border:1px solid var(--line); border-radius:10px; margin-bottom:10px; }
   .prod-head { font-size:14px; margin-bottom:4px; }
   .status { margin-top:14px; font-size:13px; color:var(--muted); min-height:18px; word-break:break-word; }
@@ -36,7 +37,10 @@
 <div class="card">
   <header>
     <span class="brand">⚙️ Admin — Checkout crypto</span>
-    <button id="connect">Connecter le wallet</button>
+    <span>
+      <button id="reload" class="ghost">↻ Recharger</button>
+      <button id="connect">Connecter le wallet</button>
+    </span>
   </header>
   <div id="who" class="muted">Lecture seule — connecte le wallet propriétaire pour modifier.</div>
 

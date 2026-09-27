@@ -53,14 +53,31 @@
   }
 
   // ---------------- lecture blockchain (sans wallet) ----------------
+  // Robustesse : chaque appel a un timeout, et en cas de lenteur/erreur
+  // réseau on bascule automatiquement sur un autre RPC public.
   var readProvider = null;
+  var rpcIndex = 0;
+
+  function withTimeout(promise, ms) {
+    return new Promise(function (resolve, reject) {
+      var t = setTimeout(function () { reject(new Error('timeout')); }, ms);
+      promise.then(
+        function (v) { clearTimeout(t); resolve(v); },
+        function (e) { clearTimeout(t); reject(e); }
+      );
+    });
+  }
+
   async function getReadProvider() {
     if (readProvider) return readProvider;
+    var list = cfg.readRpcs || [];
     var last = null;
-    for (var i = 0; i < (cfg.readRpcs || []).length; i++) {
+    for (var k = 0; k < list.length; k++) {
+      var i = (rpcIndex + k) % list.length;
       try {
-        var p = new ethers.JsonRpcProvider(cfg.readRpcs[i], cfg.chain.id, { staticNetwork: true });
-        await p.getBlockNumber();
+        var p = new ethers.JsonRpcProvider(list[i], cfg.chain.id, { staticNetwork: true });
+        await withTimeout(p.getBlockNumber(), 6000);
+        rpcIndex = i;
         readProvider = p;
         return p;
       } catch (e) { last = e; }
@@ -68,14 +85,32 @@
     throw last || new Error('Aucun RPC disponible');
   }
 
+  // Exécute fn(contrat) en essayant les RPC dans l'ordre (timeout par essai).
+  // Les erreurs « métier » (revert / réponse invalide) ne tournent pas en boucle.
+  async function rpc(fn) {
+    var list = cfg.readRpcs || [];
+    var last = null;
+    for (var k = 0; k <= list.length; k++) {
+      try {
+        var p = await getReadProvider();
+        var c = new ethers.Contract(cfg.contract, CHECKOUT_ABI, p);
+        return await withTimeout(fn(c), 9000);
+      } catch (e) {
+        last = e;
+        if (e && (e.code === 'CALL_EXCEPTION' || e.code === 'BAD_DATA')) throw e;
+        readProvider = null;
+        rpcIndex = (rpcIndex + 1) % (list.length || 1);
+      }
+    }
+    throw last || new Error('RPC indisponible');
+  }
+
   async function readProduct(id) {
-    var p = await getReadProvider();
-    var c = new ethers.Contract(cfg.contract, CHECKOUT_ABI, p);
-    var r = await c.products(id);
+    var r = await rpc(function (c) { return c.products(id); });
     var out = { exists: r[1], priceBNB: r[0], priceUSDT: 0n, usdtSupported: false };
     if (out.exists && cfg.usdt && cfg.usdt.enabled) {
       try {
-        var u = await c.productPriceInToken(id, cfg.usdt.address);
+        var u = await rpc(function (c) { return c.productPriceInToken(id, cfg.usdt.address); });
         out.priceUSDT = u;
         out.usdtSupported = u > 0n;
       } catch (e) { out.usdtSupported = false; }

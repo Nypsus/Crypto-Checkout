@@ -3,6 +3,7 @@
    ---------------------------------------------------------------------
    Sans serveur, sans mot de passe : la lecture est publique, et toute
    écriture est signée par le wallet propriétaire du contrat.
+   Robustesse : timeout par appel + bascule automatique entre RPC publics.
    ===================================================================== */
 (function () {
   'use strict';
@@ -53,13 +54,28 @@
 
   // ------------------- lecture (sans wallet) -------------------
   var readProvider = null;
+  var rpcIndex = 0;
+
+  function withTimeout(promise, ms) {
+    return new Promise(function (resolve, reject) {
+      var t = setTimeout(function () { reject(new Error('timeout')); }, ms);
+      promise.then(
+        function (v) { clearTimeout(t); resolve(v); },
+        function (e) { clearTimeout(t); reject(e); }
+      );
+    });
+  }
+
   async function getReadProvider() {
     if (readProvider) return readProvider;
+    var list = cfg.readRpcs || [];
     var last = null;
-    for (var i = 0; i < (cfg.readRpcs || []).length; i++) {
+    for (var k = 0; k < list.length; k++) {
+      var i = (rpcIndex + k) % list.length;
       try {
-        var p = new ethers.JsonRpcProvider(cfg.readRpcs[i], cfg.chain.id, { staticNetwork: true });
-        await p.getBlockNumber();
+        var p = new ethers.JsonRpcProvider(list[i], cfg.chain.id, { staticNetwork: true });
+        await withTimeout(p.getBlockNumber(), 6000);
+        rpcIndex = i;
         readProvider = p;
         return p;
       } catch (e) { last = e; }
@@ -67,62 +83,81 @@
     throw last || new Error('Aucun RPC disponible');
   }
 
-  function readContract(p) { return new ethers.Contract(cfg.contract, ABI, p); }
-
-  async function detectV2(c) {
-    try {
-      var po = await c.payout();
-      if (po && /^0x[a-fA-F0-9]{40}$/.test(po)) { isV2 = true; return po; }
-    } catch (e) { /* contrat V1 : pas de payout() */ }
-    return null;
-  }
-
-  function usdtPriceOf(c, id) {
-    if (!isV2 || !USDT.enabled || !USDT.address) return Promise.resolve(null);
-    return c.productPriceInToken(id, USDT.address).then(function (v) { return v; }).catch(function () { return null; });
+  async function rpc(fn) {
+    var list = cfg.readRpcs || [];
+    var last = null;
+    for (var k = 0; k <= list.length; k++) {
+      try {
+        var p = await getReadProvider();
+        var c = new ethers.Contract(cfg.contract, ABI, p);
+        return await withTimeout(fn(c), 9000);
+      } catch (e) {
+        last = e;
+        if (e && (e.code === 'CALL_EXCEPTION' || e.code === 'BAD_DATA')) throw e;
+        readProvider = null;
+        rpcIndex = (rpcIndex + 1) % (list.length || 1);
+      }
+    }
+    throw last || new Error('RPC indisponible');
   }
 
   async function refresh() {
+    setStatus('Lecture du contrat…');
+    var fails = 0;
     try {
-      var p = await getReadProvider();
-      var c = readContract(p);
-      try { ownerAddr = await c.owner(); } catch (e) { ownerAddr = null; }
-      var payout = await detectV2(c);
-      var bal = await p.getBalance(cfg.contract);
-      $('balance').textContent = fmt(bal) + ' BNB';
-      if (payout) { $('payout').textContent = payout; }
+      ownerAddr = await rpc(function (c) { return c.owner(); }).catch(function () { return null; });
+      var payout = await rpc(function (c) { return c.payout(); }).catch(function () { return null; });
+      isV2 = !!(payout && /^0x[a-fA-F0-9]{40}$/.test(payout));
+      if (isV2) { $('payout').textContent = payout; }
+
+      var bal = await rpc(function (c) { return (c.runner.provider || c.runner).getBalance(cfg.contract); })
+        .catch(function () { return null; });
+      $('balance').textContent = bal === null ? '— (lecture impossible)' : fmt(bal) + ' BNB';
 
       var ids = Object.keys(cfg.products || {});
       var box = $('products');
       box.innerHTML = '';
       for (var i = 0; i < ids.length; i++) {
-        await renderProduct(c, box, ids[i]);
+        var ok = await renderProduct(box, ids[i]);
+        if (!ok) { fails++; }
       }
 
       $('sec-v2').classList.toggle('hide', !isV2);
       syncButtons();
-      setStatus(ownerAddr ? ('Propriétaire du contrat : ' + ownerAddr + (isV2 ? ' — CheckoutV2 détecté ✓' : ' — contrat V1 (BNB uniquement)')) : 'Propriétaire inconnu (lecture seule).');
+      var msg = ownerAddr
+        ? 'Propriétaire du contrat : ' + ownerAddr + (isV2 ? ' — CheckoutV2 détecté ✓' : ' — contrat V1 (BNB uniquement)')
+        : 'Propriétaire inconnu (lecture seule).';
+      if (fails) { msg += ' · ' + fails + ' lecture(s) produit en échec — clique ↻ Recharger.'; }
+      setStatus(msg, fails ? 'err' : '');
     } catch (e) {
-      setStatus('Erreur de lecture : ' + errMsg(e), 'err');
+      setStatus('Erreur de lecture : ' + errMsg(e) + ' — clique ↻ Recharger.', 'err');
     }
   }
 
-  async function renderProduct(c, box, id) {
+  // Retourne true si la lecture on-chain a réussi, sinon affiche l'erreur.
+  async function renderProduct(box, id) {
     var meta = (cfg.products && cfg.products[id]) || {};
     var pr = null;
-    try { pr = await c.products(id); } catch (e) { pr = null; }
+    var ok = true;
+    try { pr = await rpc(function (c) { return c.products(id); }); } catch (e) { ok = false; }
+    var usd = null;
+    if (ok && isV2 && USDT.enabled && USDT.address) {
+      usd = await rpc(function (c) { return c.productPriceInToken(id, USDT.address); }).catch(function () { return null; });
+    }
+
     var exists = pr ? pr[1] : false;
-    var usd = await usdtPriceOf(c, id);
+    var info;
+    if (!ok) { info = '<span class="err">lecture impossible — réessaie (↻)</span>'; }
+    else if (exists) {
+      info = 'actuel : <b>' + fmt(pr[0]) + ' BNB</b>' + (usd !== null ? ' · <b>' + fmt(usd) + ' USDT</b>' : '');
+    } else { info = '<span class="muted">pas encore enregistré on-chain</span>'; }
 
     var div = document.createElement('div');
     div.className = 'prod';
 
     var head = document.createElement('div');
     head.className = 'prod-head';
-    head.innerHTML = '<b>' + esc(id) + '</b> <span class="muted">' + esc(meta.name || '') + '</span> — ' +
-      (exists
-        ? ('actuel : <b>' + fmt(pr[0]) + ' BNB</b>' + (usd !== null ? ' · <b>' + fmt(usd) + ' USDT</b>' : ''))
-        : '<span class="err">pas encore enregistré on-chain</span>');
+    head.innerHTML = '<b>' + esc(id) + '</b> <span class="muted">' + esc(meta.name || '') + '</span> — ' + info;
     div.appendChild(head);
 
     var row = document.createElement('div');
@@ -136,6 +171,7 @@
         : '');
     div.appendChild(row);
     box.appendChild(div);
+    return ok;
   }
 
   // ------------------- actions (owner) -------------------
@@ -203,8 +239,7 @@
     if (!isOwner || !sig) { setStatus("Connecte d'abord le wallet propriétaire.", 'err'); return; }
     try {
       $('withdraw').disabled = true;
-      var p = await getReadProvider();
-      var bal = await p.getBalance(cfg.contract);
+      var bal = await rpc(function (c) { return (c.runner.provider || c.runner).getBalance(cfg.contract); });
       if (bal <= 0) { setStatus('Rien à retirer (solde du contrat : 0 BNB).'); return; }
       var c = new ethers.Contract(cfg.contract, ABI, sig);
       var tx = await c.withdraw(bal);
@@ -252,7 +287,7 @@
       sig = await bp.getSigner();
       user = await sig.getAddress();
       if (!ownerAddr) {
-        try { ownerAddr = await (readContract(await getReadProvider())).owner(); } catch (e) { ownerAddr = null; }
+        ownerAddr = await rpc(function (c) { return c.owner(); }).catch(function () { return null; });
       }
       isOwner = !!(ownerAddr && user.toLowerCase() === ownerAddr.toLowerCase());
       $('who').textContent = 'Wallet : ' + user + (isOwner ? ' — PROPRIÉTAIRE ✓' : ' — pas le propriétaire (lecture seule)');
@@ -268,6 +303,7 @@
 
   document.addEventListener('DOMContentLoaded', function () {
     $('connect').addEventListener('click', connect);
+    $('reload').addEventListener('click', function () { refresh(); });
     $('add').addEventListener('click', onAdd);
     $('withdraw').addEventListener('click', onWithdraw);
     $('set-payout').addEventListener('click', onSetPayout);
