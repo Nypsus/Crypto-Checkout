@@ -14,7 +14,9 @@ pragma solidity ^0.8.20;
 
    Conventions :
    - token == 0x0  -> paiement en BNB (natif) ;
-   - sinon         -> token BEP20 autorisé (transferFrom vers l'owner).
+   - sinon         -> token BEP20 autorisé ;
+   - les fonds (BNB et tokens) partent vers l'adresse de retrait `payout`
+     (par défaut le déployeur, modifiable par le propriétaire via setPayout).
 
    Déploiement : Remix, Solidity 0.8.20+, constructeur `tokens` =
    [0x55d398326f99059fF775485246999027B3197955]  (USDT BSC).
@@ -27,6 +29,7 @@ interface IERC20 {
 
 contract CheckoutV2 {
     address public owner;
+    address public payout; // adresse qui reçoit les paiements (défaut : déployeur)
     mapping(address => bool) public allowedTokens;
 
     struct Product {
@@ -46,9 +49,16 @@ contract CheckoutV2 {
 
     constructor(address[] memory tokens) {
         owner = msg.sender;
+        payout = msg.sender;
         for (uint256 i = 0; i < tokens.length; i++) {
             allowedTokens[tokens[i]] = true;
         }
+    }
+
+    /// Adresse qui reçoit les paiements (par défaut le déployeur).
+    function setPayout(address newPayout) external onlyOwner {
+        require(newPayout != address(0), "Adresse invalide");
+        payout = newPayout;
     }
 
     // ------------------- Gestion des produits -------------------
@@ -94,12 +104,12 @@ contract CheckoutV2 {
         if (token == address(0)) {
             require(amount == products[productId].price, "Montant incorrect pour ce produit");
             require(msg.value == amount, "Valeur envoyee incorrecte");
-            payable(owner).transfer(amount);
+            payable(payout).transfer(amount);
         } else {
             require(allowedTokens[token], "Token non supporte");
             require(amount == productPriceInToken[productId][token], "Montant incorrect pour ce produit");
             require(msg.value == 0, "Pas de BNB pour un paiement en token");
-            require(IERC20(token).transferFrom(msg.sender, owner, amount), "Echec du transfert de token");
+            require(IERC20(token).transferFrom(msg.sender, payout, amount), "Echec du transfert de token");
         }
 
         emit PaymentReceived(msg.sender, amount, token, productId);
@@ -108,12 +118,12 @@ contract CheckoutV2 {
     // ------------------- Retraits (secours) -------------------
 
     /// Récupère du BNB bloqué sur le contrat (les paiements vont normalement
-    /// directement à l'owner, ceci ne sert qu'en secours).
+    /// directement au payout, ceci ne sert qu'en secours).
     function withdraw(uint256 amount) external onlyOwner {
-        payable(owner).transfer(amount);
+        payable(payout).transfer(amount);
     }
 
     function withdrawToken(address token, uint256 amount) external onlyOwner {
-        require(IERC20(token).transfer(owner, amount), "Echec du transfert du token");
+        require(IERC20(token).transfer(payout, amount), "Echec du transfert du token");
     }
 }

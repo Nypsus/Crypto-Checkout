@@ -27,6 +27,8 @@
   .toggle button:disabled { opacity:.4; cursor:not-allowed; }
   #pay { width:100%; padding:14px; border:0; border-radius:12px; background:var(--acc); color:#151515; font-size:16px; font-weight:700; cursor:pointer; }
   #pay:disabled { opacity:.55; cursor:not-allowed; }
+  .notice { margin-top:12px; padding:10px 12px; border:1px dashed var(--line); border-radius:10px; font-size:12.5px; color:var(--muted); line-height:1.55; }
+  .notice strong { color:var(--txt); }
   .status { margin-top:14px; font-size:13px; color:var(--muted); min-height:18px; word-break:break-word; }
   .status.ok { color:var(--ok); } .status.err { color:var(--err); }
   a { color:var(--acc); text-decoration:none; }
@@ -57,6 +59,11 @@
       <button data-unit="USDT" id="btn-usdt" disabled>Payer en USDT</button>
     </div>
     <button id="pay" disabled>Payer</button>
+    <div class="notice">
+      <strong>Ce qui va se passer :</strong> ton wallet va s'ouvrir et te demander de confirmer
+      (parfois 2 étapes pour l'USDT). Vérifie que le destinataire est bien le contrat affiché
+      en bas, puis clique « Confirmer ». Rien à recopier, aucun montant à saisir.
+    </div>
     <div class="status" id="status"></div>
   </div>
 
