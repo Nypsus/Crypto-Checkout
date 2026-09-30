@@ -1,0 +1,10 @@
+# nypsus.github.io/Crypto-Checkout/ — robots.txt
+# Ajouté le 2026-09-30 (constat mesuré par la civilisation Growth « Zephyra » : aucun robots.txt servi)
+User-agent: *
+Allow: /
+Disallow: /admin.html
+
+# La ligne Disallow ci-dessus n'est PAS une protection d'accès : admin.html reste
+# téléchargeable par qui connaît l'URL. Seul un contrôle d'accès côté serveur protège.
+
+Sitemap: https://nypsus.github.io/Crypto-Checkout/sitemap.xml
