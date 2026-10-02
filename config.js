@@ -49,7 +49,15 @@ window.CHECKOUT_CONFIG = {
   products: {
     product1: { name: 'Indicateur Daily',  description: 'Accès à l’indicateur Daily — Les Indicateurs à Levier' },
     product2: { name: 'Indicateur 4h/1h',  description: 'Accès à l’indicateur 4h/1h — Les Indicateurs à Levier' },
-    product3: { name: 'Indicateur 15mn',   description: 'Accès à l’indicateur 15mn — Les Indicateurs à Levier' }
+    product3: { name: 'Indicateur 15mn',   description: 'Accès à l’indicateur 15mn — Les Indicateurs à Levier' },
+
+    // ---- Honest Switch : fiches méthode (2 €) ----
+    'verifier-plateforme-agreee': { name: 'Fiche — Vérifier une plateforme agréée', description: 'La méthode en 7 contrôles + checklist imprimable (Honest Switch)' },
+    'resiliation-recommandee':    { name: 'Fiche — Résiliation par recommandé',     description: 'Modèle de mise en demeure + escalade en 4 étapes (Honest Switch)' },
+    'mailchimp-hausse-prix':      { name: 'Fiche — Ce que Mailchimp facture',       description: 'Recalcul de la facture + procédure de nettoyage (Honest Switch)' },
+    'repeater-wifi-promo':        { name: 'Fiche — Vérifier une promo',             description: 'Traçage du prix + seuil de décision (Honest Switch)' },
+    'tracker-find-my-diy':        { name: 'Fiche — Tracker Localiser maison',       description: 'Liste d’achat + limites réelles (Honest Switch)' },
+    'etiquettes-eink-esl':        { name: 'Fiche — Étiquettes e-ink (ESL)',         description: 'Méthode de flash + modèles non récupérables (Honest Switch)' }
   },
 
   // ---- Options d'affichage ----
